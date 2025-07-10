@@ -14,44 +14,504 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ============================
+// MODELOS EXISTENTES (Actualizados con auditoría y soft delete)
+// ============================
+
 model Candidate {
   id                Int               @id @default(autoincrement())
   firstName         String            @db.VarChar(100)
   lastName          String            @db.VarChar(100)
   email             String            @unique @db.VarChar(255)
-  phone             String?           @db.VarChar(15)
-  address           String?           @db.VarChar(100)
+  phone             String?           @db.VarChar(20) // Aumentado para números internacionales
+  address           String?           @db.VarChar(255) // Aumentado para direcciones completas
+  
+  // Auditoría y soft delete
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  deletedAt         DateTime?
+  
+  // Relaciones existentes
   educations        Education[]
   workExperiences   WorkExperience[]
   resumes           Resume[]
+  
+  // Nuevas relaciones
+  applications      Application[]
+  candidateSkills   CandidateSkill[]
+  
+  // Índices individuales
+  @@index([lastName])
+  @@index([email])
+  @@index([deletedAt])
+  
+  // Índices compuestos optimizados
+  @@index([lastName, firstName]) // Búsquedas por nombre completo
+  @@index([deletedAt, lastName]) // Candidatos activos ordenados por apellido
+  @@index([createdAt, deletedAt]) // Para reportes y análisis temporales
 }
 
 model Education {
   id            Int       @id @default(autoincrement())
-  institution   String    @db.VarChar(100)
-  title         String    @db.VarChar(250)
+  institution   String    @db.VarChar(255) // Aumentado para nombres largos de instituciones
+  title         String    @db.VarChar(255) // Aumentado para títulos largos
+  degree        String?   @db.VarChar(100) // Nuevo: tipo de título (Bachelor, Master, PhD, etc.)
+  fieldOfStudy  String?   @db.VarChar(255) // Nuevo: campo de estudio específico
   startDate     DateTime
   endDate       DateTime?
+  isCompleted   Boolean   @default(false) // Nuevo: si completó la educación
+  gpa           Decimal?  @db.Decimal(3, 2) // Nuevo: promedio académico
   candidateId   Int
+  
+  // Auditoría y soft delete
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  
+  // Relaciones
   candidate     Candidate @relation(fields: [candidateId], references: [id])
+  
+  // Índices individuales
+  @@index([candidateId])
+  @@index([deletedAt])
+  @@index([degree])
+  @@index([fieldOfStudy])
+  
+  // Índices compuestos optimizados
+  @@index([candidateId, deletedAt]) // Educación activa por candidato
+  @@index([degree, fieldOfStudy]) // Búsquedas por tipo y campo de estudio
+  @@index([candidateId, endDate]) // Educación por candidato ordenada por fecha
 }
 
 model WorkExperience {
-  id          Int       @id @default(autoincrement())
-  company     String    @db.VarChar(100)
-  position    String    @db.VarChar(100)
-  description String?   @db.VarChar(200)
-  startDate   DateTime
-  endDate     DateTime?
-  candidateId Int
-  candidate   Candidate @relation(fields: [candidateId], references: [id])
+  id           Int       @id @default(autoincrement())
+  company      String    @db.VarChar(255) // Aumentado para nombres largos de empresas
+  position     String    @db.VarChar(255) // Aumentado para títulos largos de posiciones
+  description  String?   @db.Text // Cambiado a Text para descripciones largas
+  industry     String?   @db.VarChar(100) // Nuevo: industria de la empresa
+  location     String?   @db.VarChar(255) // Nuevo: ubicación del trabajo
+  employmentType String? @db.VarChar(50) // Nuevo: tipo de empleo (full-time, part-time, etc.)
+  startDate    DateTime
+  endDate      DateTime?
+  isCurrent    Boolean   @default(false) // Nuevo: si es el trabajo actual
+  candidateId  Int
+  
+  // Auditoría y soft delete
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+  
+  // Relaciones
+  candidate    Candidate @relation(fields: [candidateId], references: [id])
+  
+  // Índices individuales
+  @@index([candidateId])
+  @@index([deletedAt])
+  @@index([company])
+  @@index([industry])
+  @@index([isCurrent])
+  
+  // Índices compuestos optimizados
+  @@index([candidateId, deletedAt]) // Experiencia activa por candidato
+  @@index([candidateId, startDate]) // Experiencia por candidato ordenada por fecha
+  @@index([industry, position]) // Búsquedas por industria y posición
+  @@index([company, deletedAt]) // Experiencias activas por empresa
 }
 
 model Resume {
   id          Int       @id @default(autoincrement())
   filePath    String    @db.VarChar(500)
+  fileName    String    @db.VarChar(255) // Nuevo: nombre original del archivo
   fileType    String    @db.VarChar(50)
+  fileSize    BigInt?   // Nuevo: tamaño del archivo en bytes
   uploadDate  DateTime
+  isLatest    Boolean   @default(false) // Nuevo: si es la versión más reciente
+  version     Int       @default(1) // Nuevo: versión del CV
   candidateId Int
+  
+  // Auditoría y soft delete
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  
+  // Relaciones
   candidate   Candidate @relation(fields: [candidateId], references: [id])
+  
+  // Índices individuales
+  @@index([candidateId])
+  @@index([deletedAt])
+  @@index([fileType])
+  @@index([isLatest])
+  
+  // Índices compuestos optimizados
+  @@index([candidateId, deletedAt]) // CVs activos por candidato
+  @@index([candidateId, isLatest]) // CV más reciente por candidato
+  @@index([candidateId, version]) // CVs por candidato ordenados por versión
+  @@index([uploadDate, deletedAt]) // CVs activos ordenados por fecha
+}
+
+// ============================
+// NUEVOS MODELOS (Con buenas prácticas)
+// ============================
+
+model Company {
+  id            String      @id @default(cuid())
+  name          String      @db.VarChar(255)
+  description   String?     @db.Text
+  website       String?     @db.VarChar(255)
+  industry      String?     @db.VarChar(100)
+  size          String?     @db.VarChar(50)
+  location      String?     @db.VarChar(255)
+  
+  // Auditoría y soft delete
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  deletedAt     DateTime?
+  
+  // Relaciones
+  employees     Employee[]
+  positions     Position[]
+  
+  @@index([name])
+  @@index([industry])
+  @@index([deletedAt])
+}
+
+model Employee {
+  id          String      @id @default(cuid())
+  companyId   String
+  name        String      @db.VarChar(255)
+  email       String      @unique @db.VarChar(255)
+  role        String      @db.VarChar(100)
+  isActive    Boolean     @default(true)
+  
+  // Auditoría y soft delete
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  deletedAt   DateTime?
+  
+  // Relaciones
+  company     Company     @relation(fields: [companyId], references: [id])
+  interviews  Interview[]
+  
+  @@index([companyId])
+  @@index([email])
+  @@index([isActive])
+  @@index([deletedAt])
+}
+
+model Position {
+  id            String        @id @default(cuid())
+  companyId     String
+  title         String        @db.VarChar(255)
+  description   String        @db.Text
+  requirements  String?       @db.Text
+  location      String?       @db.VarChar(255)
+  isRemote      Boolean       @default(false) // Nuevo: si es trabajo remoto
+  employmentType String?      @db.VarChar(50) // Full-time, Part-time, Contract, etc.
+  experienceLevel String?     @db.VarChar(50) // Junior, Mid, Senior, etc.
+  department    String?       @db.VarChar(100) // Nuevo: departamento
+  salary        Decimal?      @db.Decimal(12, 2) // Aumentado para salarios altos
+  salaryMax     Decimal?      @db.Decimal(12, 2) // Nuevo: rango salarial máximo
+  currency      String?       @db.VarChar(3) // USD, EUR, etc.
+  status        String        @default("active") @db.VarChar(50) // active, closed, paused
+  openings      Int           @default(1) // Nuevo: número de vacantes
+  priority      String        @default("medium") @db.VarChar(20) // high, medium, low
+  
+  // Auditoría y soft delete
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
+  publishedAt   DateTime?     // Nuevo: fecha de publicación
+  closedAt      DateTime?     // Nuevo: fecha de cierre
+  
+  // Relaciones
+  company       Company       @relation(fields: [companyId], references: [id])
+  applications  Application[]
+  positionSkills PositionSkill[]
+  
+  // Índices individuales
+  @@index([companyId])
+  @@index([title])
+  @@index([status])
+  @@index([employmentType])
+  @@index([experienceLevel])
+  @@index([department])
+  @@index([isRemote])
+  @@index([deletedAt])
+  
+  // Índices compuestos optimizados
+  @@index([status, deletedAt]) // Posiciones activas
+  @@index([companyId, status]) // Posiciones por empresa y estado
+  @@index([employmentType, experienceLevel]) // Búsquedas por tipo y nivel
+  @@index([department, status]) // Posiciones activas por departamento
+  @@index([publishedAt, status]) // Posiciones publicadas y activas
+  @@index([isRemote, employmentType]) // Trabajos remotos por tipo
+  @@index([salary, salaryMax]) // Búsquedas por rango salarial
+}
+
+model Application {
+  id              String            @id @default(cuid())
+  positionId      String
+  candidateId     Int               // Int para mantener compatibilidad con Candidate existente
+  applicationDate DateTime          @default(now())
+  status          String            @default("pending") @db.VarChar(50) // pending, reviewing, interviewed, rejected, accepted
+  source          String?           @db.VarChar(100) // Nuevo: fuente de aplicación (website, referral, etc.)
+  coverLetter     String?           @db.Text
+  notes           String?           @db.Text
+  score           Int?              // Nuevo: puntuación del candidato (1-100)
+  
+  // Auditoría y soft delete
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?
+  reviewedAt      DateTime?         // Nuevo: fecha de revisión
+  decidedAt       DateTime?         // Nuevo: fecha de decisión final
+  
+  // Relaciones
+  position        Position          @relation(fields: [positionId], references: [id])
+  candidate       Candidate         @relation(fields: [candidateId], references: [id])
+  interviews      Interview[]
+  
+  // Índices individuales
+  @@index([positionId])
+  @@index([candidateId])
+  @@index([status])
+  @@index([applicationDate])
+  @@index([source])
+  @@index([score])
+  @@index([deletedAt])
+  
+  // Índices compuestos optimizados
+  @@index([positionId, status]) // Aplicaciones por posición y estado
+  @@index([candidateId, status]) // Aplicaciones por candidato y estado
+  @@index([status, applicationDate]) // Aplicaciones por estado ordenadas por fecha
+  @@index([positionId, applicationDate]) // Aplicaciones por posición ordenadas por fecha
+  @@index([deletedAt, status]) // Aplicaciones activas por estado
+  @@index([source, applicationDate]) // Análisis de fuentes de aplicaciones
+  @@index([score, status]) // Candidatos por puntuación y estado
+  
+  // Constraints únicos
+  @@unique([positionId, candidateId]) // Un candidato solo puede aplicar una vez por posición
+}
+
+model Interview {
+  id            String        @id @default(cuid())
+  applicationId String
+  employeeId    String
+  interviewDate DateTime
+  duration      Int?          // Duración en minutos
+  location      String?       @db.VarChar(255)
+  meetingLink   String?       @db.VarChar(500) // Nuevo: enlace de video llamada
+  type          String        @db.VarChar(50) // phone, video, in-person, technical, etc.
+  round         Int           @default(1) // Nuevo: ronda de entrevista
+  status        String        @default("scheduled") @db.VarChar(50) // scheduled, completed, cancelled, rescheduled
+  feedback      String?       @db.Text
+  rating        Int?          // 1-5 o 1-10
+  recommendation String?      @db.VarChar(50) // hire, no_hire, maybe
+  
+  // Auditoría y soft delete
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
+  completedAt   DateTime?     // Nuevo: fecha de finalización
+  
+  // Relaciones
+  application   Application   @relation(fields: [applicationId], references: [id])
+  employee      Employee      @relation(fields: [employeeId], references: [id])
+  
+  // Índices individuales
+  @@index([applicationId])
+  @@index([employeeId])
+  @@index([interviewDate])
+  @@index([type])
+  @@index([status])
+  @@index([round])
+  @@index([rating])
+  @@index([recommendation])
+  @@index([deletedAt])
+  
+  // Índices compuestos optimizados
+  @@index([applicationId, round]) // Entrevistas por aplicación ordenadas por ronda
+  @@index([employeeId, interviewDate]) // Entrevistas por empleado ordenadas por fecha
+  @@index([status, interviewDate]) // Entrevistas por estado y fecha
+  @@index([type, status]) // Entrevistas por tipo y estado
+  @@index([deletedAt, status]) // Entrevistas activas por estado
+  @@index([recommendation, rating]) // Análisis de recomendaciones y calificaciones
+}
+
+// ============================
+// MODELOS ADICIONALES PARA FLUJO DE ENTREVISTAS
+// ============================
+
+model InterviewType {
+  id          String        @id @default(cuid())
+  name        String        @db.VarChar(100)
+  description String?       @db.Text
+  duration    Int?          // Duración típica en minutos
+  order       Int           @default(1)
+  
+  // Auditoría y soft delete
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+  
+  // Relaciones
+  steps       InterviewStep[]
+  
+  @@index([name])
+  @@index([order])
+  @@index([deletedAt])
+}
+
+model InterviewFlow {
+  id          String        @id @default(cuid())
+  positionId  String?       // Opcional: puede ser específico por posición
+  companyId   String?       // Opcional: puede ser general por empresa
+  name        String        @db.VarChar(255)
+  description String?       @db.Text
+  isActive    Boolean       @default(true)
+  
+  // Auditoría y soft delete
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+  
+  // Relaciones
+  steps       InterviewStep[]
+  
+  @@index([positionId])
+  @@index([companyId])
+  @@index([isActive])
+  @@index([deletedAt])
+}
+
+model InterviewStep {
+  id              String        @id @default(cuid())
+  flowId          String
+  typeId          String
+  order           Int
+  isRequired      Boolean       @default(true)
+  estimatedDuration Int?        // Duración estimada en minutos
+  
+  // Auditoría y soft delete
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deletedAt       DateTime?
+  
+  // Relaciones
+  flow            InterviewFlow @relation(fields: [flowId], references: [id])
+  type            InterviewType @relation(fields: [typeId], references: [id])
+  
+  @@index([flowId])
+  @@index([typeId])
+  @@index([order])
+  @@index([deletedAt])
+  @@unique([flowId, order])
+}
+
+// ============================
+// TABLAS DE NORMALIZACIÓN Y CONFIGURACIÓN
+// ============================
+
+model Industry {
+  id          String    @id @default(cuid())
+  name        String    @unique @db.VarChar(100)
+  description String?   @db.Text
+  
+  // Auditoría y soft delete
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  
+  @@index([name])
+  @@index([deletedAt])
+}
+
+model Skill {
+  id          String        @id @default(cuid())
+  name        String        @unique @db.VarChar(100)
+  category    String?       @db.VarChar(50) // technical, soft, language, etc.
+  description String?       @db.Text
+  
+  // Auditoría y soft delete
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+  
+  // Relaciones
+  candidateSkills CandidateSkill[]
+  positionSkills  PositionSkill[]
+  
+  @@index([name])
+  @@index([category])
+  @@index([deletedAt])
+}
+
+model CandidateSkill {
+  id          String    @id @default(cuid())
+  candidateId Int
+  skillId     String
+  level       String?   @db.VarChar(50) // beginner, intermediate, advanced, expert
+  yearsExp    Int?      // años de experiencia con esta habilidad
+  
+  // Auditoría y soft delete
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  
+  // Relaciones
+  candidate   Candidate @relation(fields: [candidateId], references: [id])
+  skill       Skill     @relation(fields: [skillId], references: [id])
+  
+  @@index([candidateId])
+  @@index([skillId])
+  @@index([level])
+  @@index([deletedAt])
+  @@index([candidateId, skillId]) // Habilidades por candidato
+  @@unique([candidateId, skillId]) // Un candidato no puede tener la misma habilidad duplicada
+}
+
+model PositionSkill {
+  id          String   @id @default(cuid())
+  positionId  String
+  skillId     String
+  required    Boolean  @default(true) // si es requerida o nice-to-have
+  priority    String   @default("medium") @db.VarChar(20) // high, medium, low
+  minLevel    String?  @db.VarChar(50) // nivel mínimo requerido
+  
+  // Auditoría y soft delete
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+  
+  // Relaciones
+  position    Position @relation(fields: [positionId], references: [id])
+  skill       Skill    @relation(fields: [skillId], references: [id])
+  
+  @@index([positionId])
+  @@index([skillId])
+  @@index([required])
+  @@index([priority])
+  @@index([deletedAt])
+  @@index([positionId, required]) // Habilidades requeridas por posición
+  @@unique([positionId, skillId]) // Una posición no puede tener la misma habilidad duplicada
+}
+
+model ApplicationStatus {
+  id          String    @id @default(cuid())
+  name        String    @unique @db.VarChar(50)
+  description String?   @db.Text
+  order       Int       @default(1) // orden en el flujo
+  isActive    Boolean   @default(true)
+  isFinal     Boolean   @default(false) // si es un estado final (accepted, rejected)
+  
+  // Auditoría
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@index([name])
+  @@index([order])
+  @@index([isActive])
+  @@index([isFinal])
 }

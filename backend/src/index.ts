@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import candidateRoutes from './routes/candidateRoutes';
 import { uploadFile } from './application/services/fileUploadService';
 import cors from 'cors';
+import { createDefaultSoftDeleteMiddleware } from './middleware/softDeleteMiddleware';
 
 // Extender la interfaz Request para incluir prisma
 declare global {
@@ -17,6 +18,9 @@ declare global {
 
 dotenv.config();
 const prisma = new PrismaClient();
+
+// Aplicar el middleware de soft delete
+prisma.$use(createDefaultSoftDeleteMiddleware());
 
 export const app = express();
 export default app;
